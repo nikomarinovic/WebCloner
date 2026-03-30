@@ -138,10 +138,10 @@ output/
 
 ---
 
-Screenshots
+## Screenshots
 
 <p align="center">
-  <img src="public/screenshot-1.png" alt="WebCloner Screenshot 1" width="700" />
+  <img src="public/screenshot-1.png" alt="WebCloner Screenshot 1" width="800" />
 </p>
 
 ---
