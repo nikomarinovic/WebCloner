@@ -1,5 +1,5 @@
 <h1 align="center">
-  <img src="public/logo.svg" alt="WebCloner Logo" width="96" />
+  <img src="public/logo.png" alt="WebCloner Logo" width="96" />
   <br />
   WebCloner
 </h1>
