@@ -1,0 +1,12 @@
+# WebCloner dependencies
+# Install: pip install -r requirements.txt
+
+requests>=2.31.0
+certifi>=2024.2.2
+beautifulsoup4>=4.12.0
+lxml>=4.9.0
+chardet>=5.2.0
+
+# Only needed for --dynamic flag (JS-heavy sites):
+# playwright>=1.44.0
+# After installing: playwright install chromium
