@@ -4,7 +4,7 @@ core/css_extractor.py
 Fetches all external stylesheets linked from a page,
 resolves @import chains, and caches them locally.
 Returns:
-    stylesheet_map : { original_href -> "assets/css/xxx.css" }
+    stylesheet_map : { original_href -> "xxx.css" }
     combined_css   : all CSS text joined (used for --inline mode)
 """
 
@@ -110,4 +110,4 @@ class CSSExtractor:
         h    = hashlib.md5(url.encode()).hexdigest()[:6]
         dest = self.css_dir / f"{h}_{name}"
         dest.write_text(text, encoding="utf-8")
-        return f"assets/css/{h}_{name}"
+        return f"{h}_{name}"

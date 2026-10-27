@@ -12,6 +12,7 @@ Takes one page's HTML and rewrites it for static local display:
 """
 
 import re
+import posixpath
 from urllib.parse import urljoin, urlparse, urldefrag
 
 from bs4 import BeautifulSoup, Comment
@@ -48,6 +49,7 @@ class PageBuilder:
     asset_map      : { original_url -> local_rel_path }  (from AssetHandler)
     stylesheet_map : { original_href -> local_rel_path } (from CSSExtractor)
     url_to_local   : { page_url -> local_html_path }     (built by SiteCloner)
+    local_path     : local HTML filename relative to the site root
     inline_css     : if True, embed combined CSS instead of linking
     combined_css   : all CSS text (used when inline_css=True)
     """
@@ -60,6 +62,7 @@ class PageBuilder:
         asset_map: dict,
         stylesheet_map: dict,
         url_to_local: dict,
+        local_path: str = "index.html",
         inline_css: bool = False,
         combined_css: str = "",
     ):
@@ -69,6 +72,7 @@ class PageBuilder:
         self.asset_map      = asset_map
         self.stylesheet_map = stylesheet_map
         self.url_to_local   = url_to_local
+        self.local_path     = local_path
         self.inline_css     = inline_css
         self.combined_css   = combined_css
 
@@ -99,7 +103,7 @@ class PageBuilder:
             abs_href = urljoin(self.page_url, href)
             local = self.stylesheet_map.get(href) or self.stylesheet_map.get(abs_href)
             if local:
-                tag["href"] = local
+                tag["href"] = self._relative_to_page(local)
 
     def _rewrite_images(self, soup):
         # <img>
@@ -107,7 +111,7 @@ class PageBuilder:
             if tag.get("src"):
                 local = self._resolve(tag["src"])
                 if local:
-                    tag["src"] = local
+                    tag["src"] = self._relative_to_page(local)
             if tag.get("srcset"):
                 tag["srcset"] = self._rewrite_srcset(tag["srcset"])
 
@@ -116,7 +120,7 @@ class PageBuilder:
             if tag.get("src"):
                 local = self._resolve(tag["src"])
                 if local:
-                    tag["src"] = local
+                    tag["src"] = self._relative_to_page(local)
             if tag.get("srcset"):
                 tag["srcset"] = self._rewrite_srcset(tag["srcset"])
 
@@ -127,7 +131,7 @@ class PageBuilder:
                 href = tag.get("href", "")
                 local = self._resolve(href)
                 if local:
-                    tag["href"] = local
+                    tag["href"] = self._relative_to_page(local)
 
         # Inline style url()
         for tag in soup.find_all(style=True):
@@ -144,7 +148,7 @@ class PageBuilder:
             if src:
                 local = self._resolve(src)
                 if local:
-                    tag["src"] = local
+                    tag["src"] = self._relative_to_page(local)
             kept += 1
         if removed:
             log.debug(f"  Stripped {removed} tracking script(s)")
@@ -166,7 +170,9 @@ class PageBuilder:
 
             # Is it an internal page we've crawled?
             if abs_url in self.url_to_local:
-                tag["href"] = self.url_to_local[abs_url]
+                tag["href"] = posixpath.relpath(
+                    self.url_to_local[abs_url], posixpath.dirname(self.local_path) or "."
+                )
                 continue
 
             # Is it internal but not crawled (e.g. over page limit)?
@@ -213,7 +219,11 @@ class PageBuilder:
             segs = part.strip().split()
             if not segs:
                 continue
-            local = self._resolve(segs[0]) or segs[0]
+            local = self._resolve(segs[0])
+            if local:
+                local = self._relative_to_page(local)
+            else:
+                local = segs[0]
             parts.append(f"{local} {' '.join(segs[1:])}".strip())
         return ", ".join(parts)
 
@@ -223,5 +233,12 @@ class PageBuilder:
             if raw.startswith("data:"):
                 return m.group(0)
             local = self._resolve(raw)
-            return f"url('{local}')" if local else m.group(0)
+            return (
+                f"url('{self._relative_to_page(local)}')"
+                if local else m.group(0)
+            )
         return re.sub(r'url\(\s*([^)]+)\s*\)', _rep, style)
+
+    def _relative_to_page(self, site_path: str) -> str:
+        page_dir = posixpath.dirname(self.local_path) or "."
+        return posixpath.relpath(site_path, page_dir)

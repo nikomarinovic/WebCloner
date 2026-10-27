@@ -15,7 +15,7 @@
 **WebCloner is a full‑site replication tool designed for educational analysis and offline browsing:**
 
 - Crawls **all internal pages** automatically  
-- Downloads HTML, CSS, images, fonts, and JavaScript  
+- Downloads HTML, CSS, images, and JavaScript
 - Rebuilds complete website structure locally  
 - Rewrites navigation for fully offline browsing  
 - Supports dynamic JavaScript websites (React / Vue / Angular)
@@ -30,7 +30,7 @@ Getting started with WebCloner is fast:
 
 1. **Crawl Website** — Discovers and queues all internal pages  
 2. **Fetch Content** — Downloads HTML using requests or Playwright  
-3. **Extract Resources** — Collects CSS, assets, fonts, and scripts  
+3. **Extract Resources** — Collects CSS, images, and scripts
 4. **Rewrite Links** — Converts all navigation to local paths  
 5. **Generate Snapshot** — Builds a browsable offline website
 
@@ -81,6 +81,18 @@ playwright install chromium
 
 ## Usage
 
+### Easiest: guided terminal mode
+
+Start WebCloner without a URL and follow the prompts:
+
+```bash
+python3 main.py
+```
+
+Enter a website URL (a page URL is okay), then choose to clone that page only,
+the whole site, or a limited number of pages. Most users can answer `n` to
+JavaScript rendering. The generated site is saved under `./output` by default.
+
 ### Clone entire site
 
 ```bash
@@ -111,21 +123,15 @@ python main.py https://example.com --output ./clone
 output/
 └── example.com/
     ├── index.html                # Homepage
-    ├── about/
-    │   └── index.html            # /about/
-    ├── blog/
-    │   ├── post-1/
-    │   │   └── index.html        # /blog/post-1/
-    │   └── post-2/
-    │       └── index.html        # /blog/post-2/
-    ├── contact/
-    │   └── index.html            # /contact/
-    ├── assets/
-    │   ├── css/
-    │   ├── js/
-    │   └── images/
-    └── _cloner_report.txt        # URL → local file mapping
+    ├── about.html                # /about/
+    ├── blog_post-1.html          # /blog/post-1/
+    ├── styles.css
+    ├── downloaded CSS, JavaScript, and font files
+    └── images/                   # Downloaded images
 ```
+
+Clones are static snapshots. Cookies, sign-in, forms, and other features that
+depend on the original site's server are not carried over or expected to work.
 
 ---
 
@@ -133,7 +139,7 @@ output/
 -	Full Site Crawling — Automatically discovers all internal pages
 -	Structured Output — Each website stored in its own organised folder
 -	Offline Navigation — Links rewritten for local browsing
--	Asset Deduplication — Images/fonts downloaded only once
+-	Asset Deduplication — Images downloaded only once
 -	Dynamic Rendering — Playwright support for modern JS apps
 
 ---

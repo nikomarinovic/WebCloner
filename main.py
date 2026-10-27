@@ -67,6 +67,84 @@ def print_banner():
 """ + RESET)
 
 
+def normalize_url(value: str) -> str:
+    """Accept a hostname or full HTTP(S) URL and return a validated URL."""
+    value = value.strip()
+    if not value:
+        raise ValueError("Please enter a website URL.")
+    if "://" not in value:
+        value = f"https://{value}"
+
+    parsed = urlparse(value)
+    try:
+        hostname = parsed.hostname
+        parsed.port
+    except ValueError as exc:
+        raise ValueError("The URL contains an invalid host or port.") from exc
+
+    if parsed.scheme not in ("http", "https") or not parsed.netloc or not hostname:
+        raise ValueError("Enter a valid http:// or https:// website URL.")
+    if any(char.isspace() for char in value):
+        raise ValueError("The URL cannot contain spaces.")
+    return value
+
+
+def _prompt_choice(prompt: str, choices: dict[str, str], input_fn=input) -> str:
+    options = "/".join(choices)
+    while True:
+        answer = input_fn(f"{prompt} ({options}): ").strip()
+        if answer in choices:
+            return answer
+        print(f"Please choose one of: {options}.")
+
+
+def configure_interactively(args, input_fn=input):
+    """Ask beginner-friendly questions and apply the choices to parsed args."""
+    print("\nLet's set up your website clone.\n")
+
+    while True:
+        try:
+            entered_url = input_fn("Website URL (for example, example.com/about): ")
+            args.url = normalize_url(entered_url)
+            break
+        except ValueError as exc:
+            print(exc)
+
+    scope = _prompt_choice(
+        "\nWhat would you like to clone?\n"
+        "  1) This page only\n"
+        "  2) The whole site\n"
+        "  3) A limited number of pages",
+        {"1": "one page", "2": "whole site", "3": "limited pages"},
+        input_fn,
+    )
+    if scope == "1":
+        args.max_pages = 1
+    elif scope == "2":
+        args.max_pages = 0
+    else:
+        while True:
+            value = input_fn("Maximum number of pages (positive number): ").strip()
+            try:
+                args.max_pages = int(value)
+                if args.max_pages > 0:
+                    break
+            except ValueError:
+                pass
+            print("Enter a whole number greater than 0.")
+
+    dynamic = _prompt_choice(
+        "\nDoes the site need JavaScript rendering? (Most sites do not)",
+        {"y": "yes", "n": "no"},
+        input_fn,
+    )
+    args.dynamic = dynamic == "y"
+
+    output = input_fn("\nOutput folder [./output]: ").strip()
+    args.output = output or "./output"
+    return args
+
+
 # --------------------------------------------------
 # Argument Parser
 # --------------------------------------------------
@@ -92,10 +170,10 @@ def build_parser():
     parser.add_argument("--output", "-o",
                         default="./output",
                         metavar="DIR",
-                        help="Root output directory")
+                        help="Parent directory for the generated site folder")
 
     parser.add_argument("--max-pages", "-m",
-                        type=int,
+                        type=_nonnegative_int,
                         default=0,
                         metavar="N",
                         help="Max pages to crawl (0 = unlimited)")
@@ -123,6 +201,16 @@ def build_parser():
     return parser
 
 
+def _nonnegative_int(value: str) -> int:
+    try:
+        number = int(value)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError("must be a whole number") from exc
+    if number < 0:
+        raise argparse.ArgumentTypeError("must be 0 (unlimited) or greater")
+    return number
+
+
 # --------------------------------------------------
 # Main Logic
 # --------------------------------------------------
@@ -140,16 +228,26 @@ def main():
         print_banner()
         sys.exit(0)
 
-    # ---- No arguments ----
-    if not args.url:
+    # ---- No URL: start the guided terminal flow ----
+    if not args.url and sys.stdin.isatty():
+        try:
+            args = configure_interactively(args)
+        except KeyboardInterrupt:
+            print("\nCancelled.")
+            return 130
+        except EOFError:
+            print("\nCancelled.")
+            return 0
+    elif not args.url:
         print_banner()
         parser.print_help()
-        sys.exit(0)
+        return 0
 
-    # ---- Validate URL ----
-    if not args.url.startswith(("http://", "https://")):
-        log.error("URL must start with http:// or https://")
-        sys.exit(1)
+    try:
+        args.url = normalize_url(args.url)
+    except ValueError as exc:
+        log.error(str(exc))
+        return 2
 
     # ---- Startup banner ----
     print_banner()
@@ -179,20 +277,21 @@ def main():
     if ok:
         domain = re.sub(r"^www\.", "", urlparse(args.url).netloc)
         site_dir = os.path.join(os.path.abspath(args.output), domain)
-        index_file = os.path.join(site_dir, "index.html")
+        local_page = cloner.url_to_local.get(args.url, "index.html")
+        index_file = os.path.join(site_dir, local_page)
 
         print()
         log.info("✅ Done!")
         log.info(f"📁 Site folder : {site_dir}")
         log.info(f"🌐 Open        : {index_file}")
-        log.info(f"📄 Report      : {os.path.join(site_dir, '_cloner_report.txt')}")
     else:
-        log.error("❌ Failed — see messages above.")
-        sys.exit(1)
+        log.error("❌ Failed — no pages were saved. Check the URL and messages above.")
+        return 1
+    return 0
 
 
 # --------------------------------------------------
 # Entry Point
 # --------------------------------------------------
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

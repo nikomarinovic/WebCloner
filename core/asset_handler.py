@@ -1,14 +1,15 @@
 """
 core/asset_handler.py
 ---------------------
-Downloads publicly visible assets (images, fonts, CSS, JS) referenced
+Downloads publicly visible images, CSS, and JavaScript referenced
 in HTML or CSS, and returns a mapping { original_url -> local_rel_path }.
 
-Assets are shared across all pages of a site clone (stored once in assets/).
+Assets are shared across all pages of a site clone (images/ for images, site root for CSS/JS).
 """
 
 import re
 import hashlib
+import posixpath
 from pathlib import Path
 from urllib.parse import urljoin, urlparse, unquote
 
@@ -17,14 +18,12 @@ from utils.logger import setup_logger
 
 log = setup_logger("assets")
 
-# Extension → subfolder
-_EXT_DIR = {
-    ".png":"images", ".jpg":"images", ".jpeg":"images", ".gif":"images",
-    ".webp":"images", ".svg":"images", ".ico":"images", ".avif":"images",
-    ".bmp":"images",
-    ".woff":"fonts", ".woff2":"fonts", ".ttf":"fonts", ".otf":"fonts", ".eot":"fonts",
-    ".css":"css",
-    ".js":"js",
+# Images use images/; CSS, JavaScript, and fonts stay at the site root.
+_IMAGE_EXTENSIONS = {
+    ".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".ico", ".avif", ".bmp",
+}
+_ROOT_ASSET_EXTENSIONS = {
+    ".css", ".js", ".woff", ".woff2", ".ttf", ".otf", ".eot",
 }
 
 _MAX_BYTES = 10 * 1024 * 1024   # 10 MB per asset cap
@@ -38,7 +37,7 @@ class AssetHandler:
 
     Parameters
     ----------
-    assets_dir  : Path to  output/<site>/assets/
+    assets_dir  : Path to output/<site>/
     timeout     : per-request timeout (seconds)
     base_url    : site origin, used to resolve relative URLs
     """
@@ -51,10 +50,6 @@ class AssetHandler:
         # Global maps shared across all pages
         self.asset_map:  dict[str, str] = {}   # original_url → local_rel_path
         self._downloaded: set[str]      = set()
-
-        # Create subdirs upfront
-        for sub in ("images", "fonts", "css", "js", "misc"):
-            (assets_dir / sub).mkdir(parents=True, exist_ok=True)
 
     # ── public ──────────────────────────────────────────────────────────────
 
@@ -119,8 +114,13 @@ class AssetHandler:
 
         parsed  = urlparse(url)
         ext     = Path(unquote(parsed.path)).suffix.lower()
-        subdir  = _EXT_DIR.get(ext, "misc")
-        folder  = self.assets_dir / subdir
+        if ext not in _IMAGE_EXTENSIONS | _ROOT_ASSET_EXTENSIONS:
+            log.debug(f"  Skipping unsupported asset type: {url}")
+            return None
+        folder = (
+            self.assets_dir / "images"
+            if ext in _IMAGE_EXTENSIONS else self.assets_dir
+        )
         folder.mkdir(parents=True, exist_ok=True)
 
         filename = self._safe_name(url, ext)
@@ -143,20 +143,25 @@ class AssetHandler:
             dest.write_bytes(content)
             rel = self._rel(dest)
             self.asset_map[url] = rel
-            log.debug(f"  ✓ {subdir}/{filename}  ({len(content):,} B)")
+            log.debug(f"  ✓ {rel}  ({len(content):,} B)")
             return rel
         except Exception as e:
             log.warning(f"  ✗ {url}: {e}")
             return None
 
-    def rewrite_css_urls(self, css_text: str, css_base_url: str) -> str:
+    def rewrite_css_urls(
+        self, css_text: str, css_base_url: str, output_dir: str = "."
+    ) -> str:
         """Download assets inside CSS url() and rewrite to local paths."""
         def _rep(m):
             raw = m.group(1).strip("'\"")
             if raw.startswith("data:"):
                 return m.group(0)
             local = self.download(urljoin(css_base_url, raw))
-            return f"url('{local}')" if local else m.group(0)
+            if not local:
+                return m.group(0)
+            relative = posixpath.relpath(local, output_dir)
+            return f"url('{relative}')"
         return re.sub(r'url\(\s*([^)]+)\s*\)', _rep, css_text)
 
     # ── helpers ─────────────────────────────────────────────────────────────
@@ -169,8 +174,8 @@ class AssetHandler:
             base = hashlib.md5(url.encode()).hexdigest()[:12] + ext
         elif not base.lower().endswith(ext):
             base += ext
-        return base
+        return f"{hashlib.md5(url.encode()).hexdigest()[:8]}_{base}"
 
     def _rel(self, abs_path: Path) -> str:
-        """Path relative to output root (parent of assets/)."""
-        return str(abs_path.relative_to(self.assets_dir.parent)).replace("\\", "/")
+        """Path relative to the generated site root."""
+        return str(abs_path.relative_to(self.assets_dir)).replace("\\", "/")
